@@ -2,7 +2,7 @@
 import json
 import logging
 import socket
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 log = logging.getLogger(__name__)
 
@@ -59,6 +59,64 @@ def fetch_param(host: str, port: int = 8000) -> dict | None:
 
     except OSError as e:
         raise ConsoleUnreachable from e
+
+
+@dataclass
+class DiscInfo:
+    kind: str                 # "BD", "DVD" or "NONE"
+    name: str | None = None   # from the Blu-ray's own metadata, if it has any
+    uhd: bool = False            # a 4K Ultra HD Blu-ray
+    label: str | None = None     # the disc's volume name, e.g. "THE_BACKROOMS"
+    raw: str = ""                # the payload's whole answer, for the log
+
+
+def fetch_disc(host: str, port: int = 8000, debug: bool = False) -> DiscInfo | None:
+    """Ask the payload what movie disc is in the drive.
+
+    None when the payload is older and doesn't know the command.
+    """
+    try:
+        with socket.create_connection((host, port), timeout=5) as sock:
+            sock.sendall(b"DISCDEBUG\n" if debug else b"DISC\n")
+            data = sock.makefile("r", encoding="utf-8", errors="replace").read()
+    except OSError as e:
+        raise ConsoleUnreachable from e
+    info = None
+    for line in data.splitlines()[1:]:  # the first line is the usual state line
+        key, _, value = line.partition(" ")
+        value = value.strip()
+        if key == "TYPE":
+            info = DiscInfo(value or "NONE")
+        elif info and key == "NAME" and value:
+            info.name = value
+        elif info and key == "FORMAT":
+            info.uhd = value == "UHD"
+        elif info and key == "LABEL" and value:
+            info.label = value
+    if info:
+        info.raw = data
+    log.debug("DISC reply: %r -> %s", data, info)
+    return info
+
+
+def fetch_raw(host: str, command: str, port: int = 8000, timeout: float = 5) -> str:
+    """Send one command to the payload and return everything it answers."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout) as sock:
+            sock.settimeout(timeout)
+            sock.sendall(command.encode() + b"\n")
+            return sock.makefile("r", encoding="utf-8", errors="replace").read()
+    except OSError as e:
+        raise ConsoleUnreachable from e
+
+
+def fetch_firmware(host: str, port: int = 8000) -> str | None:
+    """The console's firmware, e.g. "13.42". None from an older payload."""
+    for line in fetch_raw(host, "FW", port, timeout=5).splitlines()[1:]:
+        key, _, value = line.partition(" ")
+        if key == "FW" and value.strip():
+            return value.strip()
+    return None
 
 
 if __name__ == "__main__":

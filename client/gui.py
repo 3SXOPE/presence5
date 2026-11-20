@@ -9,12 +9,16 @@ from dataclasses import dataclass
 from PySide6.QtCore import QSettings, QThread, QTimer, Qt, Signal
 from PySide6.QtGui import QAction, QColor, QFont, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
-    QApplication, QFormLayout, QFrame, QHBoxLayout, QLabel, QLineEdit, QMenu,
-    QPushButton, QSpinBox, QSystemTrayIcon, QVBoxLayout, QWidget,
+    QApplication, QCheckBox, QComboBox, QFormLayout, QFrame, QHBoxLayout, QLabel,
+    QLineEdit, QListWidget, QListWidgetItem, QMenu, QPushButton, QSpinBox, QSystemTrayIcon,
+    QVBoxLayout, QWidget,
 )
 
 from discord_ipc import default_discord_path
-from main import PAYLOAD_PORT, PresenceClient
+from artwork import KINDS as ART_KINDS
+from version import __version__
+from logo import LOGO_PNG
+from main import SETUP_ITEMS, MENU_TEXT, PAYLOAD_PORT, PresenceClient
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +35,8 @@ class Snapshot:
     name: str | None
     image_url: str | None
     started_at: int | None
+    in_menu: bool
+    art_warning: str | None
 
 
 class Worker(QThread):
@@ -39,27 +45,46 @@ class Worker(QThread):
     updated = Signal(object)        # a Snapshot, after every poll
     cover_loaded = Signal(str, bytes)  # image URL, image bytes (empty if it failed)
 
-    def __init__(self, host: str, discord_path: str | None, interval: int):
+    def __init__(self, host: str, discord_path: str | None, interval: int,
+                 show_menu: bool, sgdb_key: str | None, art_kind: str, logo_url: str | None,
+                 tmdb_key: str | None, show_firmware: bool, setup: list):
         super().__init__()
         self.host = host
         self.discord_path = discord_path
         self.interval = interval
+        self.show_menu = show_menu
+        self.sgdb_key = sgdb_key
+        self.art_kind = art_kind
+        self.logo_url = logo_url
+        self.tmdb_key = tmdb_key
+        self.show_firmware = show_firmware
+        self.setup = setup
 
     def run(self) -> None:
-        client = PresenceClient(self.host, PAYLOAD_PORT, self.discord_path)
+        client = PresenceClient(self.host, PAYLOAD_PORT, self.discord_path,
+                                show_menu=self.show_menu, sgdb_key=self.sgdb_key,
+                                art_kind=self.art_kind, logo_url=self.logo_url,
+                                tmdb_key=self.tmdb_key, show_firmware=self.show_firmware,
+                                setup=self.setup)
         last_image_url = None
         try:
             while not self.isInterruptionRequested():
                 client.step()
 
-                image_url = client.title.image_url if client.title else None
+                if client.in_menu:
+                    image_url = client.console_image
+                else:
+                    image_url = client.title.image_url if client.title else None
                 self.updated.emit(Snapshot(
                     console_reachable=client.console_reachable,
                     discord_connected=client.discord_connected,
                     title_id=client.title_id,
-                    name=(client.title.name if client.title else client.title_id),
+                    name=(client.menu_text if client.in_menu
+                          else client.title.name if client.title else client.title_id),
                     image_url=image_url,
                     started_at=client.started_at,
+                    in_menu=client.in_menu,
+                    art_warning=client.art_warning,
                 ))
 
                 if image_url != last_image_url:
@@ -69,7 +94,8 @@ class Worker(QThread):
 
                 # Sleep in short slices so Stop takes effect quickly.
                 waited = 0
-                while waited < self.interval * 1000 and not self.isInterruptionRequested():
+                wait_ms = client.wait_time(self.interval) * 1000
+                while waited < wait_ms and not self.isInterruptionRequested():
                     self.msleep(100)
                     waited += 100
         finally:
@@ -88,7 +114,11 @@ def download(url: str) -> bytes:
 
 
 def make_icon() -> QIcon:
-    """Draw the app icon in code, so there is no image file to ship."""
+    """The presence5 logo, built into the program (client/logo.py)."""
+    pixmap = QPixmap()
+    if pixmap.loadFromData(LOGO_PNG, "PNG"):
+        return QIcon(pixmap)
+    # Fallback if the image can't be decoded: a plain "P5" tile.
     pixmap = QPixmap(64, 64)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
@@ -115,7 +145,7 @@ def format_elapsed(seconds: int) -> str:
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("presence5")
+        self.setWindowTitle(f"presence5 {__version__}")
         self.setWindowIcon(make_icon())
         self.setMinimumWidth(380)
 
@@ -138,10 +168,71 @@ class MainWindow(QWidget):
         self.interval_input.setSuffix(" s")
         self.interval_input.setValue(self.settings.value("interval", 5, int))
 
+        self.menu_input = QCheckBox("Show \u201cBrowsing the menu\u201d on the home screen")
+        self.menu_input.setChecked(self.settings.value("show_menu", True, bool))
+
+        self.firmware_input = QCheckBox("Show firmware")
+        self.firmware_input.setChecked(self.settings.value("show_firmware", True, bool))
+        self.firmware_input.setToolTip(
+            "The console's firmware, on the home-screen card and when hovering over the small "
+            "logo on every card.")
+
+        # The exploit, HEN and tools to show with the firmware: tick any.
+        saved = [x for x in self.settings.value("setup", "", str).split(",") if x.strip()]
+        self.setup_input = QListWidget()
+        self.setup_input.setToolTip(
+            "Shown on the home-screen card next to the firmware, with buttons to their pages, "
+            "and when hovering over the small logo on every card. Anyone who sees your "
+            "profile sees them.")
+        for name in SETUP_ITEMS:
+            item = QListWidgetItem(name)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            item.setCheckState(Qt.CheckState.Checked if name in saved else Qt.CheckState.Unchecked)
+            self.setup_input.addItem(item)
+        self.setup_input.setMaximumHeight(self.setup_input.sizeHintForRow(0) * len(SETUP_ITEMS) + 6)
+        self.setup_other = QLineEdit(", ".join(x for x in saved if x not in SETUP_ITEMS))
+        self.setup_other.setPlaceholderText("Others, comma-separated (e.g. BD-JB)")
+
+        self.tmdb_input = QLineEdit(self.settings.value("tmdb_key", "", str))
+        self.tmdb_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.tmdb_input.setPlaceholderText("Optional: TMDB API key")
+        self.tmdb_input.setToolTip(
+            "Movie and TV posters for Blu-rays from TMDB, the biggest database. Free key at "
+            "themoviedb.org/settings/api. Without it, other free sources are used.")
+
+        self.sgdb_input = QLineEdit(self.settings.value("sgdb_key", "", str))
+        self.sgdb_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.sgdb_input.setPlaceholderText("Optional: SteamGridDB API key")
+        self.sgdb_input.setToolTip(
+            "Game logos and icons from SteamGridDB. Get a free key at "
+            "steamgriddb.com/profile/preferences/api. Leave empty to use store covers.")
+
+        self.art_input = QComboBox()
+        for kind in ART_KINDS:
+            self.art_input.addItem(kind.capitalize(), kind)
+        self.art_input.setCurrentIndex(
+            max(0, self.art_input.findData(self.settings.value("art_kind", "logo", str))))
+        self.art_input.setToolTip("Which SteamGridDB picture to show. Icons and covers are "
+                                  "square, so they fill Discord's image box best.")
+
+        self.logo_input = QLineEdit(self.settings.value("logo_url", "", str))
+        self.logo_input.setPlaceholderText("Automatic (the project's PlayStation logo)")
+        self.logo_input.setToolTip(
+            "Public web address of the PlayStation logo Discord shows. Discord can't load "
+            "files from your PC, so the image has to be online (e.g. your GitHub fork).")
+
         form = QFormLayout()
         form.addRow("PS5 IP address", self.ip_input)
         form.addRow("Discord path", self.discord_input)
         form.addRow("Refresh every", self.interval_input)
+        form.addRow("Artwork key", self.sgdb_input)
+        form.addRow("Artwork type", self.art_input)
+        form.addRow("Poster key", self.tmdb_input)
+        form.addRow("Console logo", self.logo_input)
+        form.addRow("", self.menu_input)
+        form.addRow("", self.firmware_input)
+        form.addRow("Show with it", self.setup_input)
+        form.addRow("", self.setup_other)
 
         self.error_label = QLabel()
         self.error_label.setStyleSheet(f"color: {RED};")
@@ -287,10 +378,31 @@ class MainWindow(QWidget):
 
         discord_path = self.discord_input.text().strip() or None  # None = auto-detect
         interval = self.interval_input.value()
+        show_menu = self.menu_input.isChecked()
+        sgdb_key = self.sgdb_input.text().strip() or None
+        art_kind = self.art_input.currentData()
+        logo_url = self.logo_input.text().strip() or None
+        tmdb_key = self.tmdb_input.text().strip() or None
+        show_firmware = self.firmware_input.isChecked()
+        setup = [self.setup_input.item(i).text() for i in range(self.setup_input.count())
+                 if self.setup_input.item(i).checkState() == Qt.CheckState.Checked]
+        setup += [x.strip() for x in self.setup_other.text().split(",")
+                  if x.strip() and x.strip() not in setup]
+        if logo_url and not logo_url.startswith(("https://", "http://")):
+            self.show_error("The console logo must be a web address (https://…).")
+            self.logo_input.setFocus()
+            return
 
         self.settings.setValue("ps5_ip", host)
         self.settings.setValue("discord_path", self.discord_input.text().strip())
         self.settings.setValue("interval", interval)
+        self.settings.setValue("show_menu", show_menu)
+        self.settings.setValue("sgdb_key", sgdb_key or "")
+        self.settings.setValue("art_kind", art_kind)
+        self.settings.setValue("logo_url", logo_url or "")
+        self.settings.setValue("tmdb_key", tmdb_key or "")
+        self.settings.setValue("show_firmware", show_firmware)
+        self.settings.setValue("setup", ",".join(setup))
 
         self.error_label.hide()
         self.set_inputs_enabled(False)
@@ -298,7 +410,8 @@ class MainWindow(QWidget):
         self.set_status(self.console_status, GREY, "Console: connecting…")
         self.set_status(self.discord_status, GREY, "Discord: connecting…")
 
-        self.worker = Worker(host, discord_path, interval)
+        self.worker = Worker(host, discord_path, interval, show_menu, sgdb_key, art_kind, logo_url,
+                             tmdb_key, show_firmware, setup)
         self.worker.updated.connect(self.on_updated)
         self.worker.cover_loaded.connect(self.on_cover_loaded)
         self.worker.finished.connect(self.on_worker_finished)
@@ -340,6 +453,24 @@ class MainWindow(QWidget):
             self.set_status(self.discord_status, RED, "Discord: not reachable. Is it open?")
 
         self.started_at = snap.started_at
+
+        if snap.art_warning:
+            self.show_error(f"Artwork: {snap.art_warning}. Using store covers.")
+        else:
+            self.error_label.hide()
+
+        if snap.in_menu:
+            if self.tray is not None:
+                self.tray.setToolTip(f"presence5: {snap.name or MENU_TEXT}")
+            self.game_name.setText(snap.name or MENU_TEXT)
+            self.game_id.hide()
+            self.elapsed.show()
+            self.refresh_elapsed()
+            if snap.image_url != self.shown_image_url:
+                self.shown_image_url = None
+                self.cover.setPixmap(QPixmap())
+                self.cover.setText("…")
+            return
 
         if snap.title_id is None:
             self.show_no_game("Console is offline" if not snap.console_reachable
@@ -413,7 +544,9 @@ class MainWindow(QWidget):
             self.tray_toggle_action.setEnabled(self.button.isEnabled())
 
     def set_inputs_enabled(self, enabled: bool) -> None:
-        for widget in (self.ip_input, self.discord_input, self.interval_input):
+        for widget in (self.ip_input, self.discord_input, self.interval_input,
+                       self.menu_input, self.sgdb_input, self.art_input, self.logo_input,
+                       self.tmdb_input, self.firmware_input, self.setup_input, self.setup_other):
             widget.setEnabled(enabled)
 
     @staticmethod

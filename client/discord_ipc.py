@@ -201,7 +201,8 @@ class DiscordIPC:
         """Check whether Discord still holds its end of the connection."""
         return self.transport is not None and self.transport.is_alive()
 
-    def set_activity(self, activity: dict | None) -> None:
+    def set_activity(self, activity: dict | None) -> bool:
+        """Returns False if Discord answered but refused the activity."""
         if self.transport is None:
             raise DiscordUnavailable
 
@@ -224,8 +225,9 @@ class DiscordIPC:
         if reply.get("evt") == "ERROR":
             # Discord is up but refused this activity (a bad field, usually).
             log.warning("Discord rejected the activity: %s", reply.get("data"))
-        else:
-            log.debug("SET_ACTIVITY reply: %s", reply)
+            return False
+        log.debug("SET_ACTIVITY reply: %s", reply)
+        return True
 
     def close(self) -> None:
         if self.transport is not None:

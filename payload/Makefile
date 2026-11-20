@@ -29,8 +29,8 @@ CFLAGS := -Wall -Werror -g
 
 all: $(ELF)
 
-$(ELF): ./server.c
-	$(CC) $(CFLAGS) -o $@ $^ -lSceSystemService
+$(ELF): ./server.c ./disc.c ./disc.h ./eden.c ./eden.h
+	$(CC) $(CFLAGS) -o $@ server.c disc.c eden.c -lSceSystemService -lkernel_sys
 
 clean:
 	rm -f $(ELF)

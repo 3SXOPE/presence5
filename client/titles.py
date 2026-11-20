@@ -43,7 +43,9 @@ class TitleInfo:
     image_url: str | None
 
 
-def title_from_param(param: dict) -> TitleInfo | None:
+def title_from_param(param: dict, with_image: bool = True) -> TitleInfo | None:
+    """with_image=False skips the store lookup; the caller can do it later with
+    store_image_for(param) if no better picture turns up."""
     if not isinstance(param, dict):
         return None
 
@@ -53,10 +55,13 @@ def title_from_param(param: dict) -> TitleInfo | None:
     if not name:
         return None
 
-    content_id = param.get("contentId")
-    image_url = find_store_image(content_id) if content_id else None
-
+    image_url = store_image_for(param) if with_image else None
     return TitleInfo(name=name, image_url=image_url)
+
+
+def store_image_for(param: dict) -> str | None:
+    content_id = param.get("contentId") if isinstance(param, dict) else None
+    return find_store_image(content_id) if content_id else None
 
 
 def store_image_candidates(content_id: str) -> list[str]:

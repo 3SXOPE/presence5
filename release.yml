@@ -1,0 +1,72 @@
+# Builds the payload and the Linux and Windows clients. On a tag such as
+# v1.0.0 it also publishes them as a GitHub release, with RELEASE_NOTES.md
+# as the description. Run it by hand from the Actions tab to just get the files.
+name: Build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  payload:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the compiler
+        run: sudo apt-get update && sudo apt-get install -y clang-18 lld-18 llvm-18 make unzip
+      - name: Get the PS5 payload SDK
+        run: |
+          curl -sSL -o sdk.zip https://github.com/ps5-payload-dev/sdk/releases/latest/download/ps5-payload-sdk.zip
+          sudo unzip -q sdk.zip -d /opt
+      - name: Build presence.elf
+        run: make -C payload PS5_PAYLOAD_SDK=/opt/ps5-payload-sdk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: payload
+          path: payload/presence.elf
+
+  client:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            gui: presence5-linux
+            cli: presence5-linux-cli
+            icon: ""
+          - os: windows-latest
+            gui: presence5-windows
+            cli: presence5-cli
+            icon: --icon assets/presence5.ico
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - name: Build the app
+        run: uv run pyinstaller --noconfirm --onefile --windowed ${{ matrix.icon }} --name ${{ matrix.gui }} --paths client client/gui.py
+      - name: Build the command-line version
+        run: uv run pyinstaller --noconfirm --onefile ${{ matrix.icon }} --name ${{ matrix.cli }} --paths client client/main.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client-${{ matrix.os }}
+          path: dist/*
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [payload, client]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Presence5 ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
+          files: artifacts/*
