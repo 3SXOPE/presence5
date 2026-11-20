@@ -6,15 +6,15 @@
       "id": "presence5",
       "name": "Presence5",
       "filename": "presence5_v1.0.0.elf",
-      "url": "https://github.com/YOUR-USERNAME/presence5/releases/download/v1.0.0/presence.elf",
+      "url": "https://github.com/3SXOPE/presence5/releases/download/v1.0.0/presence.elf",
       "description": "Shows what you're playing or watching on your PS5 as Discord Rich Presence (needs the PC app)",
       "version": "v1.0.0",
       "last_update": "2026-11-20",
       "category": "Utilities",
-      "author": "AmineWallah, YOUR-USERNAME",
+      "author": "AmineWallah, 3SXOPE",
       "icon_key": "presence5",
-      "source": "https://github.com/YOUR-USERNAME/presence5/releases",
-      "details_url": "https://raw.githubusercontent.com/YOUR-USERNAME/presence5/main/README.md"
+      "source": "https://github.com/3SXOPE/presence5/releases",
+      "details_url": "https://raw.githubusercontent.com/3SXOPE/presence5/main/README.md"
     }
   ]
 }
