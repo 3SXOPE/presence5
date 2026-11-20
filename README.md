@@ -386,6 +386,7 @@ repository with Presence5 and its logo; see [its README](payload-manager/README.
   [AniList](https://anilist.co), [TVmaze](https://www.tvmaze.com) and Wikipedia.
 - Fallback PlayStation logo from [dashboard-icons](https://github.com/homarr-labs/dashboard-icons)
   (Apache 2.0).
+  - Built with help from [Claude](https://claude.ai) by Anthropic.
 
 ## License
 
