@@ -1,3 +1,5 @@
+from certs import ensure_ca_certs
+ensure_ca_certs()
 import ipaddress
 import logging
 import signal

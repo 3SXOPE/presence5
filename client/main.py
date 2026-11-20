@@ -1,3 +1,5 @@
+from certs import ensure_ca_certs
+ensure_ca_certs()
 from ps5 import (fetch_state, GameState, ConsoleUnreachable, fetch_param, fetch_disc, DiscInfo,
                  fetch_firmware)
 from titles import TitleInfo, title_from_param, lookup_ps4_title, store_image_for
@@ -34,16 +36,14 @@ LISTENING_TEXT = "Listening on PlayStation 5"
 # first of these that loads is used; --logo-url (or the GUI's "Console logo")
 # goes in front.
 CONSOLE_IMAGES = [
+    "https://raw.githubusercontent.com/3SXOPE/presence5/main/assets/ps-logo.png",
     "https://raw.githubusercontent.com/AmineWallah/presence5/main/assets/ps-logo.png",
-    "https://raw.githubusercontent.com/sxope3/presence5/main/assets/ps-logo.png",
     # The same white-on-black look, drawn from the Simple Icons PlayStation mark by
     # the images.weserv.nl image service.
     "https://images.weserv.nl/?url=cdn.simpleicons.org/playstation/white"
     "&w=360&h=360&fit=contain&cbg=black&bg=black&output=png",
-    # Last resort, always online: dashboard-icons (Apache 2.0).
-    "https://cdn.jsdelivr.net/gh/homarr-labs/dashboard-icons/png/playstation.png",
 ]
-CONSOLE_IMAGE = CONSOLE_IMAGES[-1]
+CONSOLE_IMAGE = CONSOLE_IMAGES[0]
 MENU_TEXT = "Browsing the menu"
 
 # Discord's activity types: the header word on the card and in the member list.
@@ -67,7 +67,13 @@ FIRMWARE_REFRESH = 600  # seconds between asking for the firmware again
 _UNSET = object()  # "nothing polled yet", so the first answer always counts as a change
 
 
-def image_online(url: str) -> bool:
+_https_warned = False
+
+
+def image_online(url: str) -> bool | None:
+    """True if the address serves an image, False if it doesn't, None if it
+    couldn't be checked (no connection, or HTTPS not working)."""
+    global _https_warned
     try:
         # A small GET rather than HEAD: some image services refuse HEAD.
         req = urllib.request.Request(url, headers={"Range": "bytes=0-1023",
@@ -75,19 +81,28 @@ def image_online(url: str) -> bool:
         with urllib.request.urlopen(req, timeout=6) as resp:
             resp.read(1024)
             return resp.headers.get_content_maintype() == "image"
-    except (urllib.error.URLError, OSError, ValueError):
+    except urllib.error.HTTPError:
         return False
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        if "CERTIFICATE" in str(e).upper() and not _https_warned:
+            log.warning("secure connections are failing (%s): covers and logos can't be "
+                        "looked up. Set SSL_CERT_FILE to your system's CA bundle.", e)
+            _https_warned = True
+        return None
 
 
 def pick_console_image(custom: str | None = None) -> str:
-    """The first console logo address that serves an image."""
+    """The first console logo address that serves an image. Discord downloads
+    the picture itself, so when nothing can be checked from here, the
+    project's own copy is used rather than a different-looking logo."""
     candidates = ([custom] if custom else []) + CONSOLE_IMAGES
-    for url in candidates[:-1]:
-        if image_online(url):
+    for url in candidates:
+        found = image_online(url)
+        if found:
             log.info("console logo: %s", url)
             return url
-        log.info("console logo not found at %s", url)
-    return candidates[-1]
+        log.info("console logo %s at %s", "not found" if found is False else "not checked", url)
+    return candidates[0]
 
 
 class PresenceClient:
