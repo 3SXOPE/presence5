@@ -14,7 +14,7 @@ on your PC, asks the payload every few seconds, and passes the result to your lo
 
 ## Setup
 
-Please note that this has been tested on firmware 13.42 and 13.60, CachyOS and Windows 11. I will
+Please note that this has been tested on firmware 13.42, CachyOS and Windows 11. I will
 be more than happy to fix any issues that come up, so feel free to open one.
 
 ### What you will need
