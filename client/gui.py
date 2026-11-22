@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
+import autostart
 from discord_ipc import default_discord_path
 from artwork import KINDS as ART_KINDS
 from version import __version__
@@ -223,6 +224,23 @@ class MainWindow(QWidget):
             "Public web address of the PlayStation logo Discord shows. Discord can't load "
             "files from your PC, so the image has to be online (e.g. your GitHub fork).")
 
+        # --- Starting by itself ---------------------------------------------
+        self.login_input = QCheckBox("Open presence5 when I log in (in the tray)")
+        self.login_input.setToolTip(
+            "Opens presence5 hidden in the tray every time you log in to your PC. "
+            "Linux: adds it to ~/.config/autostart. Windows: adds it to your startup apps.")
+        self.login_input.setChecked(autostart.is_enabled())
+        self.login_input.setEnabled(autostart.supported())
+        self.login_input.toggled.connect(self.on_login_toggled)
+
+        self.autorun_input = QCheckBox("Start sharing as soon as presence5 opens")
+        self.autorun_input.setToolTip(
+            "Presses Start for you with the settings above, so you don't have to open the "
+            "window. It keeps waiting if the PS5 or Discord isn't on yet.")
+        self.autorun_input.setChecked(self.settings.value("auto_start", False, bool))
+        self.autorun_input.toggled.connect(
+            lambda on: self.settings.setValue("auto_start", on))
+
         form = QFormLayout()
         form.addRow("PS5 IP address", self.ip_input)
         form.addRow("Discord path", self.discord_input)
@@ -235,6 +253,8 @@ class MainWindow(QWidget):
         form.addRow("", self.firmware_input)
         form.addRow("Show with it", self.setup_input)
         form.addRow("", self.setup_other)
+        form.addRow("Startup", self.login_input)
+        form.addRow("", self.autorun_input)
 
         self.error_label = QLabel()
         self.error_label.setStyleSheet(f"color: {RED};")
@@ -359,6 +379,30 @@ class MainWindow(QWidget):
         if self.worker is not None:
             self.worker.requestInterruption()
             self.worker.wait(8000)
+
+    # --- Starting by itself ------------------------------------------------
+
+    def on_login_toggled(self, on: bool) -> None:
+        try:
+            autostart.set_enabled(on)
+        except autostart.AutostartError as e:
+            self.show_error(f"Couldn't change opening at login: {e}")
+            self.login_input.blockSignals(True)
+            self.login_input.setChecked(not on)
+            self.login_input.blockSignals(False)
+            return
+        self.error_label.hide()
+        # Opening at login is only useful if it also starts sharing.
+        if on and not self.autorun_input.isChecked():
+            self.autorun_input.setChecked(True)
+
+    def auto_start(self) -> bool:
+        """Press Start if the option is on. False if it couldn't (no PS5 address yet)."""
+        if not self.autorun_input.isChecked() or self.worker is not None:
+            return True
+        log.info("starting automatically")
+        self.start()
+        return self.worker is not None
 
     # --- Start / stop ----------------------------------------------------
 
@@ -582,10 +626,34 @@ def main() -> None:
     )
     signal.signal(signal.SIGINT, signal.SIG_DFL)  # let Ctrl+C in the terminal quit
 
+    # Opened at login: stay in the tray instead of showing the window.
+    background = autostart.BACKGROUND_FLAG in sys.argv[1:]
     app = QApplication(sys.argv)
     app.setApplicationName("presence5")
+    autostart.refresh()  # keep the login entry pointing at this copy
     window = MainWindow()
-    window.show()
+
+    started = window.auto_start()
+    if not background or not started:
+        window.show()  # not started by itself, or it needs the PS5's address
+    elif window.tray is None:
+        # Right after login the desktop's tray may not be ready yet: wait for it
+        # (up to 30 s), then fall back to showing the window.
+        waited = {"s": 0}
+        timer = QTimer(window)
+
+        def wait_for_tray() -> None:
+            waited["s"] += 1
+            if QSystemTrayIcon.isSystemTrayAvailable():
+                timer.stop()
+                window.setup_tray()
+                window.set_button_text(window.button.text())
+            elif waited["s"] >= 30:
+                timer.stop()
+                window.show()
+
+        timer.timeout.connect(wait_for_tray)
+        timer.start(1000)
     sys.exit(app.exec())
 
 

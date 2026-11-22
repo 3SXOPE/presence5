@@ -1,2 +1,2 @@
 """The version shown in the window title, by --version, and on the console."""
-__version__ = "1.0.1"
+__version__ = "1.0.2"
