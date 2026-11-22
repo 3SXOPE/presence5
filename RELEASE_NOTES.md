@@ -1,4 +1,4 @@
-# Presence5 v1.1.0
+# Presence5 v1.0.2
 
 Presence5 can now start by itself. The payload hasn't changed, so the `presence.elf` from v1.0.0 still works. A fresh copy is included anyway.
 

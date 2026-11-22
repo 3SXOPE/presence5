@@ -1,6 +1,6 @@
 # Presence5
 
-**Version 1.1.0** · [Release notes](RELEASE_NOTES.md)
+**Version 1.0.2** · [Release notes](RELEASE_NOTES.md)
 
 A PlayStation5 payload that works alongside a desktop client to display your game activity on Discord
 through its Rich Presence feature.
