@@ -1,6 +1,6 @@
 # Presence5
 
-**Version 1.0.0** · [Release notes](RELEASE_NOTES.md)
+**Version 1.1.0** · [Release notes](RELEASE_NOTES.md)
 
 A PlayStation5 payload that works alongside a desktop client to display your game activity on Discord
 through its Rich Presence feature.
@@ -77,9 +77,27 @@ The other settings are optional:
 | Show with it | Tick the exploit, HEN and tools you use (Relapse, etaHEN, onionHEN, kstuff, ShadowMount+), or type others; they're shown next to the firmware. |
 | Console logo | Public web address of the PlayStation logo to show. Leave empty for the project's own (see [The PlayStation logo](#the-playstation-logo)). |
 | Show "Browsing the menu" | When ticked, Discord shows *Playing PlayStation 5 / Browsing the menu* while you are on the home screen. Untick it to show nothing there. |
+| Open presence5 when I log in | Opens the app hidden in the tray every time you log in to your PC. See [Starting by itself](#starting-by-itself). |
+| Start sharing as soon as presence5 opens | Presses **Start** for you, with the settings above. |
 
 Closing the window sends the client to the system tray, where it keeps running. Click the tray
 icon to bring the window back, or right-click it and choose **Quit** to exit.
+
+#### Starting by itself
+
+Tick both **Startup** options and presence5 runs without you opening it: when you log in to your
+PC it opens hidden in the tray and starts sharing. If the PS5 or Discord isn't on yet, it keeps
+waiting for them.
+
+- **Linux:** adds `presence5.desktop` to `~/.config/autostart`, which KDE, GNOME, Xfce, Cinnamon
+  and other desktops open at login. It shows up in your desktop's autostart settings.
+- **Windows:** adds presence5 to your startup apps (Task Manager › Startup apps, or Settings ›
+  Apps › Startup), for your account only. No administrator rights needed.
+
+Put the program somewhere it will stay (not a folder you clean out, like Downloads) before you
+tick the option: the entry points to the file where it is. If you move it or download a new
+version, open it once and the entry is updated. Untick the option to remove the entry.
+
 
 #### CLI
 
